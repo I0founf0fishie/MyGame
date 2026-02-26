@@ -59,8 +59,8 @@ while True:
 
     screen.blit(tile_image1, (0, 0))
     screen.blit(tile_image2, (550, 70))
-    screen.blit(tile_image3, (0, 600))
-    screen.blit(tile_image4, (600, 600))
+    screen.blit(tile_image3, (0, 550))
+    screen.blit(tile_image4, (600, 550))
 
     pygame.display.flip()
 
