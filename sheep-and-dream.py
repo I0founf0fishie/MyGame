@@ -17,6 +17,7 @@ PLAYER_X = 140
 PLAYER_W = 80
 PLAYER_H = 80
 BASE_SPEED = 4.0
+REFERENCE_FPS = 60.0
 NUM_LAYERS = 5
 LAYER_TOP_Y = 110
 LAYER_BOTTOM_Y = GROUND_Y - 70
@@ -267,7 +268,7 @@ class Game:
                     )
                 )
                 rightmost = max(rightmost, x + w)
-            self.stars.append(Star(x=col_x + star_x_offset, y=star_y, size=50, hit=False))
+            self.stars.append(Star(x=col_x + star_x_offset, y=star_y, size=80, hit=False))
             self.last_column_layers = [c[0] for c in star_clouds]
         else:
             self.last_column_layers = layers
@@ -299,6 +300,7 @@ class Game:
     def update(self, dt: float):
         if self.finished:
             return
+        dt_scale = dt * REFERENCE_FPS
         self.score_acc += dt * 10
         self.score = int(self.score_acc)
         tier = self.score // 250
@@ -307,16 +309,16 @@ class Game:
             self.invuln -= dt
         if self.push_timer > 0:
             self.push_timer = max(0.0, self.push_timer - dt)
-        self.bg_x -= self.speed * 0.3
+        self.bg_x -= self.speed * 0.3 * dt_scale
         if self.bg_x <= -GAME_W:
             self.bg_x += GAME_W
         for c in self.clouds:
-            c.x -= self.speed
+            c.x -= self.speed * dt_scale
             if c.kind == "storm" and c.storm_anim_time >= 0:
                 c.storm_anim_time += dt
         for s in self.stars:
-            s.x -= self.speed
-        self.last_column_right_x -= self.speed
+            s.x -= self.speed * dt_scale
+        self.last_column_right_x -= self.speed * dt_scale
         self.clouds = [c for c in self.clouds if c.x + c.w > -50]
         self.stars = [s for s in self.stars if s.x + s.size > -50]
         safety = 0
@@ -324,8 +326,9 @@ class Game:
             self.spawn_next_column()
             safety += 1
         p = self.player
-        p.vy += GRAVITY
-        p.y += p.vy
+        prev_y = p.y
+        p.vy += GRAVITY * dt_scale
+        p.y += p.vy * dt_scale
         landed = False
         if p.vy >= 0:
             for c in self.clouds:
@@ -335,7 +338,7 @@ class Game:
                 cx2 = c.x + c.w
                 overlap = px2 > cx1 and px1 < cx2
                 cloud_top = c.y + 10
-                prev_bottom = p.y - p.vy + PLAYER_H
+                prev_bottom = prev_y + PLAYER_H
                 curr_bottom = p.y + PLAYER_H
                 if overlap and prev_bottom <= cloud_top <= curr_bottom:
                     p.y = cloud_top - PLAYER_H
@@ -523,7 +526,7 @@ class Game:
 
     def run(self):
         while True:
-            dt = min(0.05, self.clock.tick(60) / 1000.0)
+            dt = min(0.05, self.clock.tick(120) / 1000.0)
             self.handle_events()
             if self.started and not self.paused and not self.game_over:
                 self.update(dt)
