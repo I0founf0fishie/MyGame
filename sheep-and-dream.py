@@ -38,6 +38,7 @@ class Cloud:
     kind: str  # normal | storm | sugar
     hit: bool
     layer: int
+    storm_anim_time: float = -1.0
 @dataclass
 
 class Star:
@@ -89,9 +90,14 @@ class Game:
         self.font_small = pygame.font.SysFont("arial", 20)
         self.images = {
             "bg": load_image("background.png", alpha=False),
-            "sheep": load_image("sheep_1.png"),
+            "sheep_idle": load_image("sheep_1.png"),
+            "sheep_push": load_image("sheep_2-1.png"),
+            "sheep_jump": load_image("sheep_2-2.png"),
             "cloud_normal": load_image("cloud_1.png"),
             "cloud_storm": load_image("cloud_3.png"),
+            "cloud_storm_1": load_image("cloud_3_1.png"),
+            "cloud_storm_2": load_image("cloud_3_2.png"),
+            "cloud_storm_3": load_image("cloud_3_3.png"),
             "cloud_sugar": load_image("cloud_2.png"),
             "star": load_image("star_1.png"),
             "heart": load_image("heart.png"),
@@ -113,6 +119,7 @@ class Game:
         self.speed = BASE_SPEED
         self.score_acc = 0.0
         self.invuln = 0.0
+        self.push_timer = 0.0
         self.last_column_right_x = 0.0
         self.last_column_layers = [0]
         self.last_column_hazard = False
@@ -130,7 +137,7 @@ class Game:
     def spawn_initial(self):
         start_layer_y = LAYER_YS[0]
         start_cloud = Cloud(
-            x=80, y=start_layer_y, w=220, h=60, kind="normal", hit=True, layer=0
+            x=80, y=start_layer_y, w=220, h=60, kind="normal", hit=True, layer=0, storm_anim_time=-1.0
         )
         self.clouds.append(start_cloud)
         self.player.y = start_cloud.y + 10 - PLAYER_H
@@ -196,7 +203,18 @@ class Game:
         for layer, kind in placements:
             jitter = self.rand(-20, 20)
             x = col_x + jitter
-            self.clouds.append(Cloud(x=x, y=LAYER_YS[layer], w=w, h=h, kind=kind, hit=False, layer=layer))
+            self.clouds.append(
+                Cloud(
+                    x=x,
+                    y=LAYER_YS[layer],
+                    w=w,
+                    h=h,
+                    kind=kind,
+                    hit=False,
+                    layer=layer,
+                    storm_anim_time=-1.0,
+                )
+            )
             rightmost = max(rightmost, x + w)
         if hazard_type == "star":
             # удаляем облака текущей колонки и собираем колонку заново под звезду
@@ -236,7 +254,18 @@ class Game:
             for layer, kind in star_clouds:
                 jitter = self.rand(-20, 20)
                 x = col_x + jitter
-                self.clouds.append(Cloud(x=x, y=LAYER_YS[layer], w=w, h=h, kind=kind, hit=False, layer=layer))
+                self.clouds.append(
+                    Cloud(
+                        x=x,
+                        y=LAYER_YS[layer],
+                        w=w,
+                        h=h,
+                        kind=kind,
+                        hit=False,
+                        layer=layer,
+                        storm_anim_time=-1.0,
+                    )
+                )
                 rightmost = max(rightmost, x + w)
             self.stars.append(Star(x=col_x + star_x_offset, y=star_y, size=50, hit=False))
             self.last_column_layers = [c[0] for c in star_clouds]
@@ -250,6 +279,7 @@ class Game:
             return
         if self.player.on_ground or self.player.on_cloud:
             self.player.vy = JUMP_VELOCITY
+            self.push_timer = 0.3
             self.player.on_ground = False
             self.player.on_cloud = None
 
@@ -275,11 +305,15 @@ class Game:
         self.speed = BASE_SPEED + tier * 0.6
         if self.invuln > 0:
             self.invuln -= dt
+        if self.push_timer > 0:
+            self.push_timer = max(0.0, self.push_timer - dt)
         self.bg_x -= self.speed * 0.3
         if self.bg_x <= -GAME_W:
             self.bg_x += GAME_W
         for c in self.clouds:
             c.x -= self.speed
+            if c.kind == "storm" and c.storm_anim_time >= 0:
+                c.storm_anim_time += dt
         for s in self.stars:
             s.x -= self.speed
         self.last_column_right_x -= self.speed
@@ -312,6 +346,7 @@ class Game:
                     if not c.hit:
                         c.hit = True
                         if c.kind == "storm":
+                            c.storm_anim_time = 0.0
                             self.lose_life()
                         elif c.kind == "sugar":
                             self.gain_life()
@@ -348,7 +383,21 @@ class Game:
             self.screen.fill((59, 130, 246))
 
     def draw_cloud(self, c: Cloud):
-        key = "cloud_normal" if c.kind == "normal" else "cloud_storm" if c.kind == "storm" else "cloud_sugar"
+        if c.kind == "normal":
+            key = "cloud_normal"
+        elif c.kind == "storm":
+            if c.storm_anim_time < 0:
+                key = "cloud_storm"
+            elif c.storm_anim_time < 0.2:
+                key = "cloud_storm"
+            elif c.storm_anim_time < 0.4:
+                key = "cloud_storm_1"
+            elif c.storm_anim_time < 0.6:
+                key = "cloud_storm_2"
+            else:
+                key = "cloud_storm_3"
+        else:
+            key = "cloud_sugar"
         img = self.images[key]
         rect = pygame.Rect(int(c.x), int(c.y - 20), int(c.w), int(c.h + 40))
         if img:
@@ -374,12 +423,23 @@ class Game:
         if flicker:
             return
         rect = pygame.Rect(int(self.player.x), int(self.player.y), PLAYER_W, PLAYER_H)
-        img = self.images["sheep"]
-        if img:
-            scaled = pygame.transform.smoothscale(img, (rect.w, rect.h))
-            self.screen.blit(scaled, rect.topleft)
+        visual_scale = 1.12
+        draw_w = int(PLAYER_W * visual_scale)
+        draw_h = int(PLAYER_H * visual_scale)
+        draw_x = rect.centerx - draw_w // 2
+        draw_y = rect.bottom - draw_h
+        draw_rect = pygame.Rect(draw_x, draw_y, draw_w, draw_h)
+        if self.push_timer > 0:
+            img = self.images["sheep_push"]
+        elif self.player.on_cloud is None:
+            img = self.images["sheep_jump"]
         else:
-            pygame.draw.rect(self.screen, (245, 245, 245), rect, border_radius=12)
+            img = self.images["sheep_idle"]
+        if img:
+            scaled = pygame.transform.smoothscale(img, (draw_rect.w, draw_rect.h))
+            self.screen.blit(scaled, draw_rect.topleft)
+        else:
+            pygame.draw.rect(self.screen, (245, 245, 245), draw_rect, border_radius=12)
 
     def draw_hud(self):
         # жизни
