@@ -23,7 +23,13 @@ LAYER_TOP_Y = 110
 LAYER_BOTTOM_Y = GROUND_Y - 70
 LAYER_GAP = (LAYER_BOTTOM_Y - LAYER_TOP_Y) / (NUM_LAYERS - 1)
 LAYER_YS = [LAYER_BOTTOM_Y - i * LAYER_GAP for i in range(NUM_LAYERS)]
+BASE_MIN_COLUMN_GAP = 90
+BASE_MAX_COLUMN_GAP = 170
+CLOUD_W = 180
+CLOUD_H = 60
+MIN_LAYER_X_SEPARATION = 90
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+RECORD_FILE = os.path.join(BASE_DIR, "record")
 ASSET_DIR_CANDIDATES = [
     BASE_DIR,
     os.path.join(BASE_DIR, "assets"),
@@ -106,7 +112,28 @@ class Game:
         self.started = False
         self.paused = False
         self.game_over = False
+        self.best_score = self.load_best_score()
         self.reset()
+
+    def load_best_score(self) -> int:
+        try:
+            with open(RECORD_FILE, "r", encoding="utf-8") as f:
+                raw = f.read().strip()
+            return max(0, int(raw)) if raw else 0
+        except (OSError, ValueError):
+            return 0
+
+    def save_best_score(self):
+        try:
+            with open(RECORD_FILE, "w", encoding="utf-8") as f:
+                f.write(str(self.best_score))
+        except OSError:
+            pass
+
+    def update_best_score(self):
+        if self.score > self.best_score:
+            self.best_score = self.score
+            self.save_best_score()
 
     def reset(self):
         self.player = Player(
@@ -134,6 +161,19 @@ class Game:
         if self.lives < 3 and random.random() < 0.25:
             return "sugar"
         return "normal"
+
+    def build_column_positions(self, base_x: float, layers: List[int]) -> dict:
+        x_by_layer = {}
+        for layer in sorted(layers):
+            attempts = 0
+            while True:
+                x = base_x + self.rand(-30, 30)
+                too_close = any(abs(other_x - x) < MIN_LAYER_X_SEPARATION for other_x in x_by_layer.values())
+                if not too_close or attempts >= 12:
+                    x_by_layer[layer] = x
+                    break
+                attempts += 1
+        return x_by_layer
     
     def spawn_initial(self):
         start_layer_y = LAYER_YS[0]
@@ -193,17 +233,20 @@ class Game:
             tightest_reach = min(tightest_reach, best_for_pl)
         if not math.isfinite(tightest_reach):
             tightest_reach = 0.0
-        reach = tightest_reach * self.speed * 0.65
-        min_gap = 80
-        max_gap = max(min_gap + 30, reach)
-        gap = self.rand(min_gap, max_gap)
+        reach = tightest_reach * self.speed * 0.6
+        speed_steps = max(0.0, (self.speed - BASE_SPEED) / 0.6)
+        min_gap = BASE_MIN_COLUMN_GAP + speed_steps * 6
+        max_gap = BASE_MAX_COLUMN_GAP + speed_steps * 12
+        max_reachable_gap = max(min_gap + 20, reach)
+        gap_upper = min(max_gap, max_reachable_gap)
+        gap = self.rand(min_gap, gap_upper)
         col_x = self.last_column_right_x + gap
-        w = 180
-        h = 60
+        w = CLOUD_W
+        h = CLOUD_H
         rightmost = col_x
+        x_by_layer = self.build_column_positions(col_x, [layer for layer, _ in placements])
         for layer, kind in placements:
-            jitter = self.rand(-20, 20)
-            x = col_x + jitter
+            x = x_by_layer[layer]
             self.clouds.append(
                 Cloud(
                     x=x,
@@ -252,9 +295,9 @@ class Game:
             if slot_cloud_safe and star_slot != safe_bypass_layer and random.random() < 0.5:
                 star_clouds.append((star_slot, self.pick_safe_kind()))
             rightmost = col_x
+            x_by_layer = self.build_column_positions(col_x, [layer for layer, _ in star_clouds])
             for layer, kind in star_clouds:
-                jitter = self.rand(-20, 20)
-                x = col_x + jitter
+                x = x_by_layer[layer]
                 self.clouds.append(
                     Cloud(
                         x=x,
@@ -291,6 +334,7 @@ class Game:
         self.invuln = 1.2
         if self.lives <= 0:
             self.lives = 0
+            self.update_best_score()
             self.finished = True
             self.game_over = True
     def gain_life(self):
@@ -459,8 +503,10 @@ class Game:
                 pygame.draw.circle(self.screen, color, (x + 13, y + 13), 11)
         score_surf = self.font_mid.render(str(self.score), True, (255, 255, 255))
         speed_surf = self.font_small.render("x{:.1f}".format(self.speed), True, (255, 255, 255))
+        record_surf = self.font_small.render("Рекорд: {}".format(self.best_score), True, (255, 255, 255))
         self.screen.blit(score_surf, (GAME_W // 2 - score_surf.get_width() // 2, 12))
         self.screen.blit(speed_surf, (GAME_W - speed_surf.get_width() - 20, 18))
+        self.screen.blit(record_surf, (GAME_W // 2 - record_surf.get_width() // 2, 48))
 
     def draw_overlay_text(self, lines):
         # затемнение
@@ -497,6 +543,7 @@ class Game:
             self.draw_overlay_text([
                 ("Конец игры", "big"),
                 ("Очки: {}".format(self.score), "mid"),
+                ("Рекорд: {}".format(self.best_score), "small"),
                 ("R — играть снова", "small"),
             ])
         pygame.display.flip()
