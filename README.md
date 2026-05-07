@@ -35,8 +35,8 @@ pip install pygame
 ### 3. Скачайте репозиторий
 
 ```bash
-git clone https://github.com/ваш-username/sheep-and-dream.git
-cd sheep-and-dream
+git clone https://github.com/I0founf0fishie/MyGame.git
+cd MyGame
 ```
 
 ### 4. Запустите игру
