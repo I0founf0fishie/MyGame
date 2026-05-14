@@ -114,6 +114,7 @@ class Game:
         self.started = False
         self.paused = False
         self.game_over = False
+        self.in_main_menu = True  # при старте — главное меню
         self.best_score = self.load_best_score()
         self.reset()
 
@@ -138,6 +139,7 @@ class Game:
             self.save_best_score()
 
     def reset(self):
+        self.finished = False
         self.player = Player(
             x=PLAYER_X, y=GROUND_Y - PLAYER_H, vy=0.0, on_cloud=None, on_ground=True
         )
@@ -153,8 +155,21 @@ class Game:
         self.last_column_right_x = 0.0
         self.last_column_layers = [0]
         self.last_column_hazard = False
-        self.finished = False
         self.spawn_initial()
+
+    def go_to_main_menu(self):
+        """Сброс забега и экран главного меню (из паузы или конца игры)."""
+        self.in_main_menu = True
+        self.started = False
+        self.paused = False
+        self.game_over = False
+        self.reset()
+
+    def start_game_from_menu(self):
+        self.in_main_menu = False
+        self.started = True
+        self.paused = False
+        self.game_over = False
 
     def rand(self, a: float, b: float) -> float:
         return random.uniform(a, b)
@@ -522,6 +537,40 @@ class Game:
             self.screen.blit(surf, (GAME_W // 2 - surf.get_width() // 2, y))
             y += surf.get_height() + 14
 
+    def draw_main_menu(self):
+        # затемнение поверх игрового кадра
+        shade = pygame.Surface((GAME_W, GAME_H), pygame.SRCALPHA)
+        shade.fill((20, 30, 55, 210))
+        self.screen.blit(shade, (0, 0))
+        cx = GAME_W // 2
+        y = 72
+        title = self.font_big.render("Овечка и Сон", True, (255, 255, 255))
+        self.screen.blit(title, (cx - title.get_width() // 2, y))
+        y += title.get_height() + 8
+        sub = self.font_small.render("Sheep and Dream", True, (200, 215, 255))
+        self.screen.blit(sub, (cx - sub.get_width() // 2, y))
+        y += sub.get_height() + 36
+        rec = self.font_mid.render("Рекорд: {}".format(self.best_score), True, (255, 230, 140))
+        self.screen.blit(rec, (cx - rec.get_width() // 2, y))
+        y += rec.get_height() + 48
+        play = self.font_mid.render("Играть", True, (255, 255, 255))
+        pw, ph = play.get_size()
+        pad_x, pad_y = 28, 12
+        self._menu_play_rect = pygame.Rect(cx - pw // 2 - pad_x, y - pad_y, pw + 2 * pad_x, ph + 2 * pad_y)
+        pygame.draw.rect(self.screen, (70, 120, 200), self._menu_play_rect, border_radius=10)
+        pygame.draw.rect(self.screen, (140, 190, 255), self._menu_play_rect, width=2, border_radius=10)
+        self.screen.blit(play, (cx - pw // 2, y))
+        y += ph + pad_y * 2 + 28
+        for txt in (
+            "Space / Enter / клик по кнопке — начать",
+            "Во время игры: Esc / P — пауза",
+            "В паузе или после игры: M — главное меню",
+            "Q — выход из игры",
+        ):
+            line = self.font_small.render(txt, True, (220, 225, 240))
+            self.screen.blit(line, (cx - line.get_width() // 2, y))
+            y += line.get_height() + 8
+
     def draw(self):
         self.draw_bg()
         for c in self.clouds:
@@ -529,16 +578,15 @@ class Game:
         for s in self.stars:
             self.draw_star(s)
         self.draw_player()
-        self.draw_hud()
-        if not self.started:
-            self.draw_overlay_text([
-                ("Старт — Space для прыжка", "mid"),
-                ("Esc / P — пауза", "small"),
-            ])
+        if not self.in_main_menu:
+            self.draw_hud()
+        if self.in_main_menu:
+            self.draw_main_menu()
         elif self.paused and not self.game_over:
             self.draw_overlay_text([
                 ("Пауза", "big"),
                 ("Space — прыжок, Esc/P — продолжить", "small"),
+                ("M — главное меню", "small"),
                 ("R — начать заново", "small"),
             ])
         elif self.game_over:
@@ -547,6 +595,7 @@ class Game:
                 ("Очки: {}".format(self.score), "mid"),
                 ("Рекорд: {}".format(self.best_score), "small"),
                 ("R — играть снова", "small"),
+                ("M — главное меню", "small"),
             ])
         pygame.display.flip()
         
@@ -556,28 +605,40 @@ class Game:
                 pygame.quit()
                 sys.exit(0)
             if e.type == pygame.KEYDOWN:
-                if e.key == pygame.K_SPACE:
-                    if not self.started:
-                        self.started = True
-                    elif not self.paused:
+                if self.in_main_menu:
+                    if e.key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_KP_ENTER):
+                        self.start_game_from_menu()
+                    elif e.key == pygame.K_q:
+                        pygame.quit()
+                        sys.exit(0)
+                elif e.key == pygame.K_SPACE:
+                    if not self.paused:
                         self.jump()
                 elif e.key in (pygame.K_ESCAPE, pygame.K_p):
                     if self.started and not self.game_over:
                         self.paused = not self.paused
+                elif e.key == pygame.K_m:
+                    if self.paused or self.game_over:
+                        self.go_to_main_menu()
                 elif e.key == pygame.K_r:
+                    self.in_main_menu = False
                     self.started = True
                     self.paused = False
                     self.game_over = False
                     self.reset()
             if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
-                if self.started and not self.paused:
+                if self.in_main_menu:
+                    r = getattr(self, "_menu_play_rect", None)
+                    if r and r.collidepoint(e.pos):
+                        self.start_game_from_menu()
+                elif self.started and not self.paused:
                     self.jump()
 
     def run(self):
         while True:
             dt = min(0.05, self.clock.tick(120) / 1000.0)
             self.handle_events()
-            if self.started and not self.paused and not self.game_over:
+            if self.started and not self.paused and not self.game_over and not self.in_main_menu:
                 self.update(dt)
             # синхронизация флага game_over с состоянием
             if self.finished:
