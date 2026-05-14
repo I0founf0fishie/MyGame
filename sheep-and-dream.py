@@ -14,8 +14,8 @@ GROUND_Y = GAME_H - 40
 GRAVITY = 0.7
 JUMP_VELOCITY = -14
 PLAYER_X = 140
-PLAYER_W = 80
-PLAYER_H = 80
+PLAYER_W = 100
+PLAYER_H = 100
 BASE_SPEED = 4.0
 REFERENCE_FPS = 60.0
 NUM_LAYERS = 5
@@ -26,7 +26,9 @@ LAYER_YS = [LAYER_BOTTOM_Y - i * LAYER_GAP for i in range(NUM_LAYERS)]
 BASE_MIN_COLUMN_GAP = 90
 BASE_MAX_COLUMN_GAP = 170
 CLOUD_W = 180
-CLOUD_H = 60
+CLOUD_H = 90
+# Опора для ног: ниже верхней границы логического прямоугольника — меньше «полёта» над картинкой
+CLOUD_SURFACE_OFFSET_Y = 34
 MIN_LAYER_X_SEPARATION = 90
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RECORD_FILE = os.path.join(BASE_DIR, "record")
@@ -181,7 +183,7 @@ class Game:
             x=80, y=start_layer_y, w=220, h=60, kind="normal", hit=True, layer=0, storm_anim_time=-1.0
         )
         self.clouds.append(start_cloud)
-        self.player.y = start_cloud.y + 10 - PLAYER_H
+        self.player.y = start_cloud.y + CLOUD_SURFACE_OFFSET_Y - PLAYER_H
         self.player.on_cloud = start_cloud
         self.player.on_ground = False
         self.last_column_right_x = 80 + 220
@@ -281,8 +283,8 @@ class Game:
                 star_x_offset = self.rand(90, 130)
 
             def layer_is_safe(L: int) -> bool:
-                player_top = LAYER_YS[L] + 10 - PLAYER_H
-                player_bot = LAYER_YS[L] + 10
+                player_top = LAYER_YS[L] + CLOUD_SURFACE_OFFSET_Y - PLAYER_H
+                player_bot = LAYER_YS[L] + CLOUD_SURFACE_OFFSET_Y
                 return player_bot <= star_y - 5 or player_top >= star_y + 55
             candidates = [l for l in reachable_layers if layer_is_safe(l)]
             if candidates:
@@ -381,7 +383,7 @@ class Game:
                 cx1 = c.x
                 cx2 = c.x + c.w
                 overlap = px2 > cx1 and px1 < cx2
-                cloud_top = c.y + 10
+                cloud_top = c.y + CLOUD_SURFACE_OFFSET_Y
                 prev_bottom = prev_y + PLAYER_H
                 curr_bottom = p.y + PLAYER_H
                 if overlap and prev_bottom <= cloud_top <= curr_bottom:
