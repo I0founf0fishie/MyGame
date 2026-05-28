@@ -27,7 +27,6 @@ BASE_MIN_COLUMN_GAP = 90
 BASE_MAX_COLUMN_GAP = 170
 CLOUD_W = 180
 CLOUD_H = 90
-# Опора для ног: ниже верхней границы логического прямоугольника — меньше «полёта» над картинкой
 CLOUD_SURFACE_OFFSET_Y = 34
 MIN_LAYER_X_SEPARATION = 90
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
